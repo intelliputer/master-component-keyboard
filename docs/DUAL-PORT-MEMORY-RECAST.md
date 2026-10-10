@@ -30,19 +30,58 @@ The first two exist even if the 6502 were absent. The third is the genuinely unr
 
 ```text
  CP1610 multiplexed bus       request arbiter / DRAM controller            6502 bus
- ┌───────────────────┐      ┌───────────────────────────────┐          ┌─────────────┐
- │ addr phase / data │─>    │ request / grant                │    <────┤ A[15:0],D[7:0]│
- │ phase, control    │  latch│ timing PROMs                   │ latch/  │ RD, WR, CLK │
- └───────────────────┘      │ row/column address muxes       │ buffer  └─────────────┘
+ ┌───────────────────┐       ┌────────────────────────────────┐         ┌───────────────┐
+ │ addr phase / data │─>     │ request / grant                │    <────┤ A[15:0],D[7:0]│
+ │ phase, control    │  latch│ timing PROMs                   │ latch/  │  RD, WR, CLK  │
+ └───────────────────┘       │ row/column address muxes       │ buffer  └───────────────┘
                              │ RAS, CAS, WE, refresh          │
                              │ 10-bit data latch/transceivers │
-                             └──────────────┬────────────────┘
-                                           │ 10 data lines
-                               ┌───────────▼───────────┐
-                               │ 10 × MM5290J DRAM     │
-                               │       16K × 10        │
-                               └───────────────────────┘
+                             └──────────────┬─────────────────┘
+                                            │ 10 data lines
+                                ┌───────────▼───────────┐
+                                │ 10 × MM5290J DRAM     │
+                                │       16K × 10        │
+                                └───────────────────────┘
 ```
+
+## Current hypothetical RAM replacement
+
+```text
+ CP1610 multiplexed bus         request arbiter / SRAM bridge          M6x09 8-bit bus
+ ┌───────────────────┐       ┌────────────────────────────────┐         ┌───────────────┐
+ │ addr phase / data │─>     │ request / grant                │    <────┤ A[?], D[7:0]  │
+ │ phase, control    │  latch│ SRAM address; /CE, /OE, /WE    │ latch/  │  RD, WR, CTRL │
+ └───────────────────┘       │ no RAS, CAS, or refresh        │ buffer  └───────────────┘
+                             │ 10-bit data latch/transceivers │
+                             └──────────────┬─────────────────┘
+                                            │ 10 logical bits
+                                ┌───────────▼───────────┐
+                                │ 2 × 62256 SRAM        │
+                                │ logical 16K × 10      │
+                                └───────────────────────┘
+```
+
+### 62256 SRAM physical-bank detail
+
+```text
+ CP1610 multiplexed bus         request arbiter / SRAM bridge         M6x09 8-bit bus
+ ┌───────────────────┐      ┌────────────────────────────────┐     ┌────────────────┐
+ │ addr phase / data │─>    │ request / grant                │ <───┤ A[?], D[7:0]   │
+ │ phase, control    │ latch│ address; /CE, /OE, /WE         │     │ RD, WR, control│
+ └───────────────────┘      │ 10-bit data latch/transceivers │     └────────────────┘
+                            │ no RAS/CAS; no refresh         │
+                            └──────────────┬─────────────────┘
+                                           │ 10 logical bits
+                               ┌───────────┴───────────┐
+                               │                       │
+                   ┌───────────▼───────────┐ ┌─────────▼─────────────┐
+                   │ 62256 LOW SRAM        │ │ 62256 HIGH SRAM       │
+                   │ bits 0–7              │ │ bits 8–9 used         │
+                   │ A[13:0]; 16K in use   │ │ A[13:0]; 16K in use   │
+                   └───────────────────────┘ └───────────────────────┘
+```
+
+This is a recast hypothesis, not a claim about the historical circuit. The bridge still serializes requests; SRAM removes DRAM row/column timing and refresh only.
 
 ### What each part probably does
 

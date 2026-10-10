@@ -14,6 +14,21 @@ The MAME board inventory records ten MM5290J DRAMs for the Keyboard Component me
 
 Ten such devices in parallel naturally form a **16,384 × 10-bit** store. This explains the MAME representation of a 16K CP1610-visible word store with a low 8-bit view and an upper 2-bit view for the 6502. It does not establish the original board's exact arbitration or software protocol.
 
+## Why the original design used DRAM
+
+The likely advantage was density and cost, not an inherent speed or dual-port benefit. A 16K × 10 store contains 163,840 bits. Ten 16K × 1 MM5290 DRAMs provide that capacity directly.
+
+Contemporary small SRAM would have required dramatically more packages. The board inventory also lists 2114-class 1K × 4 SRAMs for small character/display memory; using that density for a 16K × 10 store would require approximately 48 devices for a 12-bit-wide implementation. Bulk DRAM therefore reduced package count, board area, and likely memory cost while still being fast enough for the approximately 895 kHz CPU-rate represented by the emulator.
+
+| Design priority | DRAM outcome | Cost paid |
+| --- | --- | --- |
+| Bulk capacity | Ten devices form 16K × 10 directly | A DRAM controller is required |
+| Board area / component cost | Far fewer packages than small SRAM | Multiplexed addressing and refresh circuitry |
+| Adequate CPU service rate | Historic DRAM access time can fit the CPU-era timing budget | RAS/CAS scheduling and bus turnaround |
+| Possible sequential access | MM5290 supports page-mode operation | Whether the Keyboard Component used it is unknown |
+
+DRAM did **not** itself make the memory dual-ported. The surrounding logic had to present a shared-memory service to both processors.
+
 ## Direct SRAM substitution
 
 A 62256 is a 32K × 8 asynchronous static RAM. Two devices are sufficient to replace the capacity and width of the inferred MM5290 bank:
@@ -74,6 +89,32 @@ present address + data → assert write enable → write data
 ```
 
 This is a major electrical simplification, not a license to simplify the machine's observable behavior. A 62256 removes DRAM refresh and row/column sequencing; it does not make the two CPU interfaces coherent or dual-ported, and it does not resolve higher-level races over multiword state.
+
+## Consistency of the dual-memory-port hardware
+
+“Dual-port” should not be read as “coherent shared memory” in the modern sense. With ten ordinary single-port DRAMs, the likely hardware contract is only that the arbitration/control logic serializes physical DRAM cycles. A complete 10-bit access granted to one side is electrically well-formed; a request from the other side waits, is denied, or is served in a later slot. The exact historic policy is not known.
+
+| Level | What can reasonably be expected | What cannot be assumed |
+| --- | --- | --- |
+| Electrical bus | Only the granted side drives the selected bus path; DRAM timing is valid | Both CPUs accessing the DRAM at the same instant |
+| One complete DRAM word cycle | A read sees either the value before or after a completed word write | Which side wins an overlap, without knowing arbitration |
+| 10-bit logical word | CP1610 writes may be atomic if all ten bit planes share one DRAM write cycle | A 6502 low-byte and high-two-bit update being atomic together |
+| Multiword structure | Software can build a protocol using flags, sequence values, or ownership | Atomic queues, locks, records, or snapshots supplied by the hardware |
+| Cross-processor meaning | Firmware may establish a mailbox convention | Cache coherence, memory barriers, transaction isolation, or automatic conflict resolution |
+
+The important weak point is the 8-bit/10-bit split. If the 6502 reaches bits 0–7 and bits 8–9 through separate apertures, a logical 10-bit update may require at least two bus transactions. The CP1610 can then observe an intermediate state unless the original firmware uses a handshake, a validity flag, or an ownership discipline. MAME's mapping suggests this split but does not prove the original hardware's exact behavior.
+
+The conservative model for archaeology is therefore **serialized single-access consistency**:
+
+```text
+one requester is granted one physical memory cycle
+that cycle completes against all selected bit planes
+the next requester is then eligible for service
+```
+
+That model preserves no automatic consistency beyond the individual granted access. It is the appropriate default until stronger evidence appears.
+
+For the 62256 bridge, make this contract explicit and observable: publish a grant/completion order, lock the logical word while performing a low/high read-modify-write, and require higher-level protocols to use sequence/commit records for any multiword exchange. This preserves the important separation without inventing coherence that the historical machine almost certainly did not have.
 
 ## Preservation constraints for the new design
 
