@@ -133,6 +133,32 @@ The storage replacement must be a subordinate implementation choice. It must not
 
 The critical design rule is therefore: **emulate only the historic memory service that has evidence, and add observability around it; do not bake higher-degree meanings into the bridge.**
 
+## Conditional real-time layer and machine intelligence
+
+A real-time coprocessor is not required by the 62256 substitution and should not be introduced merely because a machine-intelligence project exists. It is justified only if the historical reconstruction identifies a genuine timing boundary that the M6x09 cannot safely absorb.
+
+If such a boundary exists, the useful division is one of time scales, not two independent “intelligences”:
+
+```text
+time-critical event
+        |
+        v
+real-time layer: sample, timestamp, preserve ordering
+        |
+        v
+M6x09 layer: interpret, remember, and plan
+        |
+        v
+time-stamped intent
+        |
+        v
+real-time layer: enact at a defined tick
+```
+
+The narrow role of the real-time layer is to establish what happened and when, preserve causal order, provide a stable trace for replay or learning, and enforce timing/safe defaults. The M6x09-side intelligence can then reason across longer horizons without corrupting that event sequence. This can make observations, decisions, and outcomes causally joinable for later analysis.
+
+This remains conditional. It must not be used to infer the historical Keyboard Component's gameplay or player relationship; that causal model is a higher-degree reconstruction task.
+
 ## Recommended physical boundary
 
 Place the two 62256s behind a small bridge implemented in a CPLD or FPGA. The bridge is the owner of SRAM address, data, and control pins. Neither CPU bus should directly drive the SRAM.

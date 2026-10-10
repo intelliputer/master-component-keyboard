@@ -49,7 +49,7 @@ The first two exist even if the 6502 were absent. The third is the genuinely unr
 ```text
  CP1610 multiplexed bus         request arbiter / SRAM bridge          M6x09 8-bit bus
  ┌───────────────────┐       ┌────────────────────────────────┐         ┌───────────────┐
- │ addr phase / data │─>     │ request / grant                │    <────┤ A[?], D[7:0]  │
+ │ addr phase / data │─>     │ request / grant                │    <────┤ A[15:0],D[7:0]│
  │ phase, control    │  latch│ SRAM address; /CE, /OE, /WE    │ latch/  │  RD, WR, CTRL │
  └───────────────────┘       │ no RAS, CAS, or refresh        │ buffer  └───────────────┘
                              │ 10-bit data latch/transceivers │
@@ -66,9 +66,9 @@ The first two exist even if the 6502 were absent. The third is the genuinely unr
 ```text
  CP1610 multiplexed bus         request arbiter / SRAM bridge         M6x09 8-bit bus
  ┌───────────────────┐      ┌────────────────────────────────┐     ┌────────────────┐
- │ addr phase / data │─>    │ request / grant                │ <───┤ A[?], D[7:0]   │
- │ phase, control    │ latch│ address; /CE, /OE, /WE         │     │ RD, WR, control│
- └───────────────────┘      │ 10-bit data latch/transceivers │     └────────────────┘
+ │ addr phase / data │─>    │ request / grant                │ <───┤ A[15:0],D[7:0] │
+ │ phase, control    │ latch│ address; /CE, /OE, /WE         │ latch/│ RD, WR, control│
+ └───────────────────┘      │ 10-bit data latch/transceivers │ buffer└────────────────┘
                             │ no RAS/CAS; no refresh         │
                             └──────────────┬─────────────────┘
                                            │ 10 logical bits
