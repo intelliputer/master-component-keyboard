@@ -94,6 +94,41 @@ Addresses below are the emulator's CPU-visible addresses. They are the contract 
 
 The awkward separation of the upper shared-memory plane is a warning sign: it may reflect genuine 10-bit memory organization, but the exact accessibility of its initial portion and bus arbitration need measurement or schematics.
 
+## The dual-port-memory friction point
+
+This is the key part to **recast**, rather than reproduce by default. A literal implementation requires two independently clocked buses to contend for a non-standard-width, shared random-access store. It also leaves the most important semantic questions implicit: who owns a location, what a simultaneous read/write means, whether either CPU is stalled, and how either side detects a partially written multiword structure. The driver preserves the address windows, but does not establish those electrical or concurrency rules.
+
+The historical store served three distinct purposes which should be separated in a new design:
+
+| Original apparent use | Modern replacement | Required property |
+| --- | --- | --- |
+| Fast control/status handoff | Two unidirectional asynchronous FIFOs | Ordered, bounded latency; no torn messages |
+| Bulk data/program exchange | Chunked transfer buffer with producer/consumer ownership | Explicit completion and checksum |
+| Shared inspection/work area | Versioned snapshot ring | Readers never observe a half-written snapshot |
+
+The resulting bridge has no writable location owned by both domains. Each queue has exactly one writer and one reader; ownership transfers only by advancing a committed sequence number.
+
+```text
+ endpoint clock domain                                      host clock domain
+ ┌────────────────────┐     observations / frames     ┌────────────────────┐
+ │ capture + safety    │ ──> [EP→HOST async FIFO] ──> │ agent + recorder   │
+ │ action scheduler    │ <── [HOST→EP async FIFO] <── │ planner / console  │
+ └────────────────────┘                                └────────────────────┘
+             │                                                       │
+             └────── immutable, sequence-numbered trace/snapshots ──┘
+```
+
+For the current autonomous-player work, the endpoint should accept only a compact action record such as `{sequence, target_frame, controls, maximum_duration, safe_fallback, crc}`. It acknowledges the sequence when the action is actually applied, not when it is merely received. The host receives `{sequence, captured_frame, endpoint_tick, observations, fault_flags}`. This creates causal data for training and debugging: every decision can be joined to the sensed frame and the physical action that reached the controller.
+
+There are two legitimate build modes, and they should not be conflated:
+
+| Mode | Bridge implementation | Use |
+| --- | --- | --- |
+| Compatibility/preservation | FPGA or CPLD bus bridge presenting the original CP1610 and 6502 windows, backed by dual-clock RAM and a measured collision/wait-state policy | Run recovered firmware or validate original hardware behavior |
+| Machine-intelligence rebuild | FIFO/message bridge plus trace store; no direct host writes into endpoint state | Reliable experiments, safe actuation, replay, and model training |
+
+The compatibility bridge can emulate a 16K × 10-bit store internally, including the 8-bit low plane and 2-bit upper plane, but that representation must remain behind the bridge. It is an adapter for old software, not the internal contract of the new system.
+
 ## Human and peripheral interfaces
 
 The keyboard is an active-low 10 × 8 scanned matrix. The 6502 selects the matrix line with four one-bit latches at I/O offsets `0x44–0x47`, then reads a line at offset `0x60`. The documented logical layout includes Shift, Control, Repeat, Lock, Clear Screen, Tab, Escape, Return, cursor keys, alphanumerics, and punctuation. This provides a compact, deterministic event surface well suited to recording and replay.
@@ -124,7 +159,7 @@ Preserve the architecture's separation of concerns, but replace fragile historic
                          └── versioned shared trace ┘
 ```
 
-The modern analogue of the dual-port RAM should be a **versioned, bounded mailbox**, not casually shared mutable state:
+The modern analogue of the dual-port RAM should be a **pair of versioned, bounded mailboxes**, not casually shared mutable state:
 
 * Endpoint → host: video-frame IDs, sampled controller state, emulated/hardware time, game observations, and fault flags.
 * Host → endpoint: timestamped action intents with a maximum duration, an idempotency ID, and a required safe/default action.
@@ -144,7 +179,7 @@ This avoids a common failure mode in agent projects: allowing a high-level proce
 
 Build a behavioral “Keyboard Component bridge” before attempting a hardware clone:
 
-1. Model the two domains, shared-memory ownership, reset behavior, and the address-map contracts above.
+1. Model the two domains, reset behavior, and address-map contracts. Use one-way queues and explicit ownership rather than a shared mutable memory model.
 2. Implement the 40 × 24 text overlay and keyboard matrix as testable devices; preserve the original game image as a separate layer.
 3. Replace cassette/printer internals with trace-backed adapters first. Define their timing and error states from captured observations instead of copying MAME's unfinished tape model.
 4. Attach the current autonomous-controller project only through the bounded action mailbox. Log every observation, chosen action, gate decision, and resulting frame ID.
